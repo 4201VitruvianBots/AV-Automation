@@ -1,0 +1,19 @@
+# Secrets and OAuth tokens
+client_secret*.json
+*_credentials.json
+
+# Python
+venv/
+.venv/
+__pycache__/
+*.pyc
+
+# Bundled binaries and media (too large for GitHub)
+*.exe
+*.mp4
+*.mkv
+*.mov
+
+# Local run output and scratch
+*_log.csv
+junk/

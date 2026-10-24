@@ -1,0 +1,16 @@
+before_match_seconds: 3
+after_match_seconds: 3
+before_score_post_seconds: 6
+after_score_post_seconds: 10
+
+youtube:
+  upload: True
+  expected_channel_id: "UCn8dZvF14taZdWmg8W2xXkg"
+  description: ""
+  madeForKids: False
+  tags:
+    - "robotics"
+    - "match"
+  privacyStatus: "public"
+  client_secrets_path: "client_secret.json"  # Path to your downloaded client_secrets.json
+  credentials_file: "youtube_credentials.json"  # Path to store OAuth credentials
