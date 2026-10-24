@@ -17,3 +17,6 @@ __pycache__/
 # Local run output and scratch
 *_log.csv
 junk/
+
+# Companion exports (raw exports contain passwords; commit only the redacted JSON)
+*.companionconfig
