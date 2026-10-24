@@ -5,6 +5,7 @@ after_score_post_seconds: 10
 
 youtube:
   upload: True
+  channel_name: "SoCal Showdown"
   expected_channel_id: "UCn8dZvF14taZdWmg8W2xXkg"
   description: ""
   madeForKids: False
@@ -13,4 +14,3 @@ youtube:
     - "match"
   privacyStatus: "public"
   client_secrets_path: "client_secret.json"  # Path to your downloaded client_secrets.json
-  credentials_file: "youtube_credentials.json"  # Path to store OAuth credentials

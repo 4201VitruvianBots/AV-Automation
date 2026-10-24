@@ -17,3 +17,6 @@ __pycache__/
 # Local run output and scratch
 *_log.csv
 junk/
+
+# Per-channel YouTube logins
+youtube_tokens/
