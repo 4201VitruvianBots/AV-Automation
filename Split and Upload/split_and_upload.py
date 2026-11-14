@@ -28,11 +28,20 @@ after_seconds: 3
 youtube:
   upload: true
   client_secrets_path: client_secret.json
-  credentials_file: youtube_credentials.json
+  expected_channel_id: UCxxxxxxxxxxxxxxxxxxxxxx
+  channel_name: Team 4201
   privacyStatus: public
+
+YouTube logins are saved per channel in youtube_tokens/<channel id>.json, so several
+channels can stay signed in on one shared computer. Useful commands:
+  python split_and_upload.py --config ftc_config.yaml --auth_only               (sign in / check)
+  python split_and_upload.py --config ftc_config.yaml --auth_only --reauthorize (switch account)
+  python split_and_upload.py --config ftc_config.yaml --sign_out                (forget this channel)
+  python split_and_upload.py --list_logins                                      (show saved channels)
 
 """
 import argparse
+import json
 import os
 import sys
 import tempfile
@@ -46,38 +55,141 @@ from datetime import datetime
 os.chdir("C:\\Users\\4201 STREAM PC\\Documents\\Split and Upload")
 
 # --- YouTube Upload Logic ---
+# youtube.upload: upload videos
+# youtube: manage playlists and more
+YOUTUBE_SCOPES = [
+    "https://www.googleapis.com/auth/youtube.upload",
+    "https://www.googleapis.com/auth/youtube"
+]
+# Each channel gets its own saved login, so switching configs never overwrites another channel's.
+TOKENS_DIR = "youtube_tokens"
+# Older versions kept a single login for every channel in this file.
+LEGACY_CREDENTIALS_FILE = "youtube_credentials.json"
+
+
+def channel_label(yt_config: dict):
+    channel_id = yt_config.get("expected_channel_id")
+    name = yt_config.get("channel_name")
+    return f"{name} ({channel_id})" if name else channel_id
+
+
+def credentials_path(yt_config: dict):
+    """Per-channel token file. An explicit credentials_file may use {channel_id}."""
+    channel_id = yt_config["expected_channel_id"]
+    configured = yt_config.get("credentials_file")
+    # Configs from older versions still name the shared file; give them per-channel logins too.
+    if configured and configured != LEGACY_CREDENTIALS_FILE:
+        return configured.format(channel_id=channel_id)
+    return os.path.join(TOKENS_DIR, f"{channel_id}.json")
+
+
+def read_client_id(client_secrets_path: str):
+    with open(client_secrets_path, "r", encoding="utf-8") as fh:
+        info = json.load(fh)
+    return (info.get("installed") or info.get("web") or {}).get("client_id")
+
+
+def load_saved_credentials(path: str, client_id: str):
+    """Load a saved login, ignoring one that was issued to a different OAuth client."""
+    from google.oauth2.credentials import Credentials
+
+    if not os.path.exists(path):
+        return None
+    with open(path, "r", encoding="utf-8") as fh:
+        info = json.load(fh)
+    if client_id and info.get("client_id") != client_id:
+        print(f"Saved login in {path} was made with a different OAuth client. Sign in again.")
+        return None
+    return Credentials.from_authorized_user_info(info, YOUTUBE_SCOPES)
+
+
+def save_credentials(path: str, creds, channel: dict):
+    info = json.loads(creds.to_json())
+    info["channel_id"] = channel["id"]
+    info["channel_title"] = channel["snippet"]["title"]
+    info["saved_at"] = datetime.now().isoformat(timespec="seconds")
+    if os.path.dirname(path):
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+    with open(path, "w", encoding="utf-8") as fh:
+        json.dump(info, fh, indent=2)
+
+
+def list_saved_logins():
+    """Print the channels that have a saved login on this computer."""
+    paths = sorted(Path(TOKENS_DIR).glob("*.json")) if os.path.isdir(TOKENS_DIR) else []
+    if not paths:
+        print(f"No saved YouTube logins in {os.path.abspath(TOKENS_DIR)}")
+        return
+    print(f"Saved YouTube logins in {os.path.abspath(TOKENS_DIR)}:")
+    for path in paths:
+        try:
+            with open(path, "r", encoding="utf-8") as fh:
+                info = json.load(fh)
+        except (OSError, ValueError):
+            print(f"  {path.name}: unreadable")
+            continue
+        title = info.get("channel_title", "unknown channel")
+        saved_at = info.get("saved_at", "unknown time")
+        print(f"  {title} ({info.get('channel_id', path.stem)}), saved {saved_at}")
+
+
+def sign_out_youtube(yt_config: dict):
+    """Forget this channel's saved login on this computer."""
+    if not yt_config.get("expected_channel_id"):
+        raise RuntimeError("Set youtube.expected_channel_id in config before signing out")
+    path = credentials_path(yt_config)
+    if os.path.exists(path):
+        os.remove(path)
+        print(f"Removed saved login for {channel_label(yt_config)}: {path}")
+    else:
+        print(f"No saved login for {channel_label(yt_config)} at {path}")
+
+
 def authenticate_youtube(yt_config: dict, reauthorize=False):
     """Refresh or obtain credentials and verify the destination before any upload."""
     try:
         from google.auth.transport.requests import Request
         from google.auth.exceptions import RefreshError
-        from google.oauth2.credentials import Credentials
         from google_auth_oauthlib.flow import InstalledAppFlow
         from googleapiclient.discovery import build
     except Exception as exc:
         raise RuntimeError("Missing google libs. Install dependencies from requirements.txt")
 
-    # --- YouTube API scopes ---
-    # youtube.upload: upload videos
-    # youtube: manage playlists and more
-    scopes = [
-        "https://www.googleapis.com/auth/youtube.upload",
-        "https://www.googleapis.com/auth/youtube"
-    ]
     client_secrets_path = yt_config.get("client_secrets_path")
-    credentials_file = yt_config.get("credentials_file", "youtube_credentials.json")
     expected_channel = yt_config.get("expected_channel_id")
     if not expected_channel:
         raise RuntimeError("Set youtube.expected_channel_id in config before authenticating or uploading")
-
-    creds = None
     if client_secrets_path is None:
         raise RuntimeError("YouTube upload requested but 'client_secrets_path' not specified in config")
+    credentials_file = credentials_path(yt_config)
+    client_id = read_client_id(client_secrets_path)
+
+    def sign_in():
+        print(f"Opening Google sign-in for {channel_label(yt_config)}.")
+        print("Pick the Google account that manages this channel, then pick the channel itself if Google asks.")
+        flow = InstalledAppFlow.from_client_secrets_file(client_secrets_path, YOUTUBE_SCOPES)
+        return flow.run_local_server(port=0, prompt="select_account consent", access_type="offline")
+
+    def authorized_channels(creds):
+        youtube = build("youtube", "v3", credentials=creds)
+        channels = youtube.channels().list(part="id,snippet", mine=True).execute().get("items", [])
+        for channel in channels:
+            print(f"Authorized YouTube channel: {channel['snippet']['title']} ({channel['id']})")
+        return youtube, channels
+
+    def is_expected(channels):
+        return len(channels) == 1 and channels[0]["id"] == expected_channel
 
     # Load or create OAuth credentials
-    if not reauthorize and os.path.exists(credentials_file):
-        creds = Credentials.from_authorized_user_file(credentials_file, scopes)
-    credentials_changed = False
+    creds = None
+    from_legacy = False
+    if not reauthorize:
+        creds = load_saved_credentials(credentials_file, client_id)
+        if creds is None and credentials_file != LEGACY_CREDENTIALS_FILE and os.path.exists(LEGACY_CREDENTIALS_FILE):
+            # Seed from the old shared login; it is only kept if it belongs to this channel.
+            creds = load_saved_credentials(LEGACY_CREDENTIALS_FILE, client_id)
+            from_legacy = creds is not None
+    credentials_changed = from_legacy
     if creds and not creds.valid and creds.refresh_token:
         try:
             creds.refresh(Request())
@@ -88,23 +200,24 @@ def authenticate_youtube(yt_config: dict, reauthorize=False):
             print("Saved authorization could not be refreshed. Opening Google authorization.")
             creds = None
     if not creds or not creds.valid:
-        flow = InstalledAppFlow.from_client_secrets_file(client_secrets_path, scopes)
-        creds = flow.run_local_server(port=0, prompt="select_account consent", access_type="offline")
+        creds = sign_in()
         credentials_changed = True
+        from_legacy = False
 
-    youtube = build("youtube", "v3", credentials=creds)
-    channels = youtube.channels().list(part="id,snippet", mine=True).execute().get("items", [])
-    for channel in channels:
-        print(f"Authorized YouTube channel: {channel['snippet']['title']} ({channel['id']})")
-    if len(channels) != 1 or channels[0]["id"] != expected_channel:
+    youtube, channels = authorized_channels(creds)
+    if from_legacy and not is_expected(channels):
+        print(f"The old shared login ({LEGACY_CREDENTIALS_FILE}) is for a different channel.")
+        creds = sign_in()
+        youtube, channels = authorized_channels(creds)
+    if not is_expected(channels):
         raise RuntimeError(
-            f"YouTube channel verification failed. Expected {expected_channel}; "
+            f"YouTube channel verification failed. Expected {channel_label(yt_config)}; "
             "no upload was started. Run --auth_only --reauthorize and select the intended channel. "
             "Existing saved credentials were not replaced."
         )
     if credentials_changed:
-        with open(credentials_file, "w", encoding="utf-8") as fh:
-            fh.write(creds.to_json())
+        save_credentials(credentials_file, creds, channels[0])
+        print(f"Saved login for {channels[0]['snippet']['title']} to {credentials_file}")
     return youtube
 
 
@@ -340,8 +453,10 @@ def main():
     p = argparse.ArgumentParser(description="Split robot match video and optionally upload to YouTube.")
     p.add_argument("--auth_only", action="store_true", help="Authenticate and verify the channel without splitting or uploading")
     p.add_argument("--reauthorize", action="store_true", help="With --auth_only, select an account again instead of using saved credentials")
+    p.add_argument("--sign_out", action="store_true", help="Forget the saved YouTube login for the config's channel on this computer")
+    p.add_argument("--list_logins", action="store_true", help="List the YouTube channels with a saved login on this computer")
     p.add_argument("--input", help="Path to input video file")
-    p.add_argument("--config", required=True, help="Path to YAML config file")
+    p.add_argument("--config", help="Path to YAML config file")
     p.add_argument("--output_path", required=False, help="Path to output video (mp4). If omitted, auto-generates from event/match name in current working directory.")
     p.add_argument("--match_start_time", type=parse_timecode, help="Match start time (seconds or HH:MM:SS)")
     p.add_argument("--match_end_time", type=parse_timecode, help="Match end time (seconds or HH:MM:SS)")
@@ -350,9 +465,14 @@ def main():
     p.add_argument("--match_name", help="Match name for output and YouTube title")
     p.add_argument("--threads", required=False, help="Number of threads to for FFMPEG to use.")
     args = p.parse_args()
+    if args.list_logins:
+        list_saved_logins()
+        return
+    if not args.config:
+        p.error("the following arguments are required: --config")
     if args.reauthorize and not args.auth_only:
         p.error("--reauthorize requires --auth_only")
-    if not args.auth_only:
+    if not args.auth_only and not args.sign_out:
         missing = [f"--{name}" for name in ("input", "match_start_time", "match_end_time", "event_name", "match_name") if getattr(args, name) is None]
         if missing:
             p.error("the following arguments are required: " + ", ".join(missing))
@@ -366,6 +486,9 @@ def main():
     # Load config
     with open(args.config, "r", encoding="utf-8") as fh:
         cfg = yaml.safe_load(fh)
+    if args.sign_out:
+        sign_out_youtube(cfg.get("youtube", {}))
+        return
     if args.auth_only:
         authenticate_youtube(cfg.get("youtube", {}), reauthorize=args.reauthorize)
         print("YouTube authentication and channel verification succeeded. No video was uploaded.")
