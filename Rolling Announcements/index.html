@@ -1,0 +1,291 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Announcements Link Builder</title>
+<style>
+  :root {
+    color-scheme: light dark;
+    --bg: #f4f5f7; --panel: #ffffff; --line: #d9dce1; --text: #1b1d21; --muted: #626875;
+    --accent: #2f6fdf; --accent-text: #ffffff; --warn: #b4521b; --ok: #2e7d4f;
+    --input: #ffffff; --thumb: #0e0f11;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #1c1e22; --panel: #26292e; --line: #3a3e45; --text: #e8eaee; --muted: #9aa1ad;
+      --accent: #5b8ff0; --accent-text: #0d1117; --warn: #f0a070; --ok: #6fcf97;
+      --input: #1c1e22; --thumb: #000000;
+    }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text); font: 14px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif; }
+  main { max-width: 1100px; margin: 0 auto; padding: 16px 16px 96px; }
+  h1 { font-size: 18px; margin: 4px 0 14px; }
+  h2 { font-size: 13px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); margin: 22px 0 8px; }
+  .panel { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 14px; }
+  .fields { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 12px; margin-top: 12px; }
+  label { display: block; font-size: 12px; color: var(--muted); margin-bottom: 4px; }
+  input[type=text], input[type=number] {
+    width: 100%; padding: 7px 9px; border: 1px solid var(--line); border-radius: 6px;
+    background: var(--input); color: var(--text); font: inherit;
+  }
+  input:focus-visible, button:focus-visible, .btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+  .row { display: flex; gap: 8px; align-items: center; }
+  .row input[type=text] { flex: 1; min-width: 0; }
+  input[type=color] { width: 40px; height: 32px; padding: 2px; border: 1px solid var(--line); border-radius: 6px; background: var(--input); }
+  .check { display: flex; gap: 6px; align-items: center; font-size: 13px; color: var(--text); margin: 0; }
+  button, .btn {
+    padding: 7px 12px; border-radius: 6px; border: 1px solid var(--line); background: var(--panel);
+    color: var(--text); font: inherit; cursor: pointer; text-decoration: none; white-space: nowrap;
+  }
+  button.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-text); font-weight: 600; }
+  button:disabled { opacity: .5; cursor: default; }
+  .hint { color: var(--muted); font-size: 12px; margin: 6px 0 0; }
+  .link { display: flex; gap: 8px; flex-wrap: wrap; }
+  .link input { flex: 1 1 260px; min-width: 0; font-family: ui-monospace, Consolas, monospace; font-size: 12px; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 12px; }
+  .slide { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; overflow: hidden; }
+  .slide.hidden { opacity: .55; }
+  .thumb { aspect-ratio: 16 / 9; background: var(--thumb); display: flex; align-items: center; justify-content: center; }
+  .thumb canvas { max-width: 100%; max-height: 100%; display: block; }
+  .meta { padding: 10px; }
+  .meta .top { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 6px; }
+  .tag { font-size: 11px; padding: 1px 6px; border-radius: 10px; border: 1px solid var(--line); color: var(--muted); }
+  .tag.custom { color: var(--accent); border-color: var(--accent); }
+  .secs { display: flex; gap: 6px; align-items: center; }
+  .secs input { width: 90px; }
+  .secs span { color: var(--muted); font-size: 12px; }
+  .empty { color: var(--muted); padding: 24px; text-align: center; }
+  .error { color: var(--warn); }
+  footer {
+    position: fixed; left: 0; right: 0; bottom: 0; background: var(--panel); border-top: 1px solid var(--line);
+    padding: 10px 16px; display: flex; gap: 10px; align-items: center; flex-wrap: wrap;
+  }
+  footer .grow { flex: 1; min-width: 120px; color: var(--muted); font-size: 13px; }
+  #status.ok { color: var(--ok); }
+  #status.bad { color: var(--warn); }
+</style>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+<script src="deck.js"></script>
+</head>
+<body>
+<main>
+  <h1>Rolling announcements: link builder</h1>
+
+  <div class="panel">
+    <label for="deck">Google Slides link (shared as "Anyone with the link can view"), or an existing OBS link to edit</label>
+    <div class="row">
+      <input id="deck" type="text" spellcheck="false" autocomplete="off">
+      <a id="open" class="btn" target="_blank" rel="noopener">Open deck</a>
+    </div>
+    <div class="fields">
+      <div>
+        <label for="defaultSeconds">Default seconds per slide</label>
+        <input id="defaultSeconds" type="number" min="0.5" step="0.5">
+      </div>
+      <div>
+        <label for="fadeMs">Cross-fade (milliseconds, 0 = cut)</label>
+        <input id="fadeMs" type="number" min="0" step="100">
+      </div>
+      <div>
+        <label for="bgColor">Background (around the slide)</label>
+        <div class="row">
+          <input id="bgColor" type="color">
+          <label class="check"><input id="bgTransparent" type="checkbox"> Transparent</label>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <h2>OBS Browser Source URL</h2>
+  <div class="panel">
+    <div class="link">
+      <input id="url" type="text" readonly aria-label="OBS Browser Source URL">
+      <button id="copy" class="primary">Copy</button>
+      <a id="preview" class="btn" target="_blank" rel="noopener">Preview</a>
+    </div>
+    <p class="hint">Paste this into the OBS Browser Source's URL. The slides reload whenever the source is refreshed
+      or its URL changes. This page's own address keeps the same settings, so you can bookmark it to come back and edit.</p>
+  </div>
+
+  <h2>Slides</h2>
+  <p class="hint" style="margin:-2px 0 10px">Leave a box empty to use the slide's speaker-note timing (e.g. "12s") or the default.
+    Custom timings stay with their slide when slides are moved around, but reset if the slide's text or pictures change.</p>
+  <div id="slides" class="grid"><div class="empty">Loading slides…</div></div>
+</main>
+
+<footer>
+  <div class="grow"><span id="total"></span> <span id="status"></span></div>
+  <button id="refreshHere">Refresh slides</button>
+  <button id="copy2" class="primary">Copy OBS link</button>
+</footer>
+
+<script>
+(() => {
+  'use strict';
+  const $ = (id) => document.getElementById(id);
+  let cfg = Deck.fromQuery(location.search);
+  let deck = null;
+  let statusTimer = 0;
+
+  function setStatus(text, kind) {
+    $('status').textContent = text;
+    $('status').className = kind || '';
+    clearTimeout(statusTimer);
+    if (kind === 'ok') statusTimer = setTimeout(() => setStatus(''), 2500);
+  }
+
+  function fillForm() {
+    $('deck').value = cfg.deck ? `https://docs.google.com/presentation/d/${cfg.deck}/edit` : '';
+    $('defaultSeconds').value = cfg.defaultSeconds;
+    $('fadeMs').value = cfg.fadeMs;
+    const transparent = cfg.background === 'transparent';
+    $('bgTransparent').checked = transparent;
+    $('bgColor').disabled = transparent;
+    if (!transparent && /^#[0-9a-f]{6}$/i.test(cfg.background)) $('bgColor').value = cfg.background;
+    updateOpenLink();
+  }
+
+  function updateOpenLink() {
+    const id = Deck.deckId($('deck').value);
+    $('open').href = id ? `https://docs.google.com/presentation/d/${id}/edit` : '#';
+    $('open').style.visibility = id ? 'visible' : 'hidden';
+  }
+
+  // Rebuild the OBS link, and keep this page's own address in step so it can be bookmarked.
+  function updateLink() {
+    if (deck) {   // forget custom timings for slides that are no longer in the deck
+      const present = new Set(deck.slides.map((s) => s.fp));
+      for (const fp of Object.keys(cfg.timings)) if (!present.has(fp)) delete cfg.timings[fp];
+    }
+    const query = Deck.toQuery(cfg);
+    const url = new URL('announcements.html?' + query, location.href).href;
+    $('url').value = cfg.deck ? url : '';
+    $('preview').href = cfg.deck ? url : '#';
+    $('copy').disabled = $('copy2').disabled = !cfg.deck;
+    history.replaceState(null, '', '?' + query);
+  }
+
+  async function copyLink() {
+    try { await navigator.clipboard.writeText($('url').value); }
+    catch (e) { $('url').select(); document.execCommand('copy'); }
+    setStatus('Link copied - paste it into the OBS Browser Source', 'ok');
+  }
+
+  function updateTotal() {
+    if (!deck) { $('total').textContent = ''; return; }
+    const shown = deck.slides.filter((s) => !s.hidden && s.page);
+    const secs = shown.reduce((sum, s) => sum + Deck.timing(s, cfg).seconds, 0);
+    const m = Math.floor(secs / 60), s = Math.round(secs % 60);
+    $('total').textContent = `${shown.length} slides · ${m ? m + ' min ' : ''}${s} s per loop`;
+  }
+
+  function describe(slide) {
+    const t = Deck.timing(slide, cfg);
+    return t.source === 'custom' ? 'custom' : t.source === 'notes' ? `${t.seconds}s from notes` : `${t.seconds}s default`;
+  }
+
+  async function loadSlides() {
+    const box = $('slides');
+    if (!cfg.deck) { box.innerHTML = '<div class="empty">Paste a Google Slides link above.</div>'; deck = null; updateTotal(); return; }
+    box.innerHTML = '<div class="empty">Loading slides…</div>';
+    let fresh;
+    try { fresh = await Deck.loadDeck(cfg.deck); }
+    catch (err) {
+      box.innerHTML = '';
+      const d = document.createElement('div');
+      d.className = 'empty error';
+      d.textContent = `Couldn't load the slides: ${err.message}`;
+      box.appendChild(d);
+      deck = null; updateTotal();
+      return;
+    }
+    if (deck) deck.pdf.destroy().catch(() => {});
+    deck = fresh;
+    box.innerHTML = '';
+    for (const slide of deck.slides) box.appendChild(slideCard(slide));
+    updateTotal();
+    updateLink();
+    for (const card of box.querySelectorAll('.slide')) {
+      if (card._slide.page) {
+        try { await Deck.render(deck.pdf, card._slide.page, card.querySelector('canvas'), 320, 180); }
+        catch (e) { console.warn(e); }
+      }
+    }
+  }
+
+  function slideCard(slide) {
+    const card = document.createElement('div');
+    card.className = 'slide' + (slide.hidden ? ' hidden' : '');
+    card._slide = slide;
+    card.innerHTML = `
+      <div class="thumb"><canvas></canvas></div>
+      <div class="meta">
+        <div class="top"><strong>Slide ${slide.n}</strong><span class="tag"></span></div>
+        <div class="secs"><input type="number" min="0.5" step="0.5" aria-label="Seconds for slide ${slide.n}"><span>seconds</span></div>
+      </div>`;
+    const tag = card.querySelector('.tag');
+    const input = card.querySelector('input');
+    const refresh = () => {
+      if (slide.hidden) { tag.textContent = 'skipped'; tag.className = 'tag'; input.disabled = true; return; }
+      tag.textContent = describe(slide);
+      tag.className = 'tag' + (cfg.timings[slide.fp] ? ' custom' : '');
+      input.placeholder = Deck.timing(slide, Object.assign({}, cfg, { timings: {} })).seconds;
+    };
+    card._refresh = refresh;
+    if (cfg.timings[slide.fp]) input.value = cfg.timings[slide.fp];
+    input.addEventListener('input', () => {
+      const v = parseFloat(input.value);
+      if (v > 0) cfg.timings[slide.fp] = Math.max(0.5, v); else delete cfg.timings[slide.fp];
+      refresh(); updateTotal(); updateLink();
+    });
+    refresh();
+    return card;
+  }
+
+  const refreshCards = () => { document.querySelectorAll('.slide').forEach((c) => c._refresh()); updateTotal(); };
+
+  $('deck').addEventListener('input', updateOpenLink);
+  $('deck').addEventListener('change', () => {
+    const v = $('deck').value.trim();
+    if (/announcements\.html\?/.test(v)) {   // an existing OBS link: take all of its settings
+      cfg = Deck.fromQuery(v.slice(v.indexOf('?')));
+      fillForm(); updateLink(); loadSlides();
+      return;
+    }
+    const id = Deck.deckId(v);
+    if (v && !id) { setStatus("That doesn't look like a Google Slides link", 'bad'); return; }
+    if (id !== cfg.deck) { cfg.deck = id; cfg.timings = {}; }
+    setStatus('');
+    updateLink(); loadSlides();
+  });
+  $('defaultSeconds').addEventListener('input', () => {
+    const v = parseFloat($('defaultSeconds').value);
+    if (!(v > 0)) return;
+    cfg.defaultSeconds = Math.max(0.5, v);
+    refreshCards(); updateLink();
+  });
+  $('fadeMs').addEventListener('input', () => {
+    const v = parseInt($('fadeMs').value, 10);
+    if (!(v >= 0)) return;
+    cfg.fadeMs = v; updateLink();
+  });
+  $('bgColor').addEventListener('input', () => { cfg.background = $('bgColor').value; updateLink(); });
+  $('bgTransparent').addEventListener('change', () => {
+    $('bgColor').disabled = $('bgTransparent').checked;
+    cfg.background = $('bgTransparent').checked ? 'transparent' : $('bgColor').value;
+    updateLink();
+  });
+  $('url').addEventListener('focus', () => $('url').select());
+  $('copy').addEventListener('click', copyLink);
+  $('copy2').addEventListener('click', copyLink);
+  $('refreshHere').addEventListener('click', loadSlides);
+
+  fillForm();
+  updateLink();
+  loadSlides();
+})();
+</script>
+</body>
+</html>
