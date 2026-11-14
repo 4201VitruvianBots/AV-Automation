@@ -23,3 +23,7 @@ youtube_tokens/
 
 # Companion exports (raw exports contain passwords; commit only the redacted JSON)
 *.companionconfig
+
+# fll-stream live match state (rewritten constantly while the server runs)
+fll-stream/data.json
+fll-stream/data.json.tmp

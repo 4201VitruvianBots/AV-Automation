@@ -1,0 +1,106 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
+<title>FLL Scores</title>
+<style>
+  * { box-sizing: border-box; }
+  body { margin: 0; font-family: "Segoe UI", system-ui, sans-serif; background: #14161a; color: #eee; }
+  main { max-width: 900px; margin: 0 auto; padding: 16px; }
+  header { display: flex; justify-content: space-between; align-items: baseline; }
+  h1 { font-size: 26px; margin: 0; }
+  a { color: #8ab4f8; }
+  #banner { margin: 12px 0; padding: 12px 14px; border-radius: 10px; background: #1c1f24; font-size: 16px; }
+  #banner.live { background: #7a4b00; font-weight: 600; }
+  select, input { font: inherit; border-radius: 10px; border: 1px solid #444; background: #1c1f24; color: #eee; }
+  #match { width: 100%; padding: 14px; font-size: 20px; }
+  .tables { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin: 12px 0; }
+  .tile { border-radius: 10px; padding: 10px 14px; }
+  .tile.r { background: #b00000; } .tile.b { background: #0000b0; }
+  .tile small { opacity: .8; } .tile b { font-size: 26px; display: block; } .tile span { font-size: 15px; display: block; min-height: 20px; }
+  .tile input { width: 100%; margin-top: 8px; padding: 12px; font-size: 34px; font-weight: 700; text-align: center; background: #fff; color: #000; border: 0; }
+  .tile input:disabled { opacity: .25; }
+  button { font: inherit; font-weight: 600; border: 0; border-radius: 12px; color: #fff; padding: 18px; cursor: pointer; font-size: 20px; }
+  button:disabled { opacity: .35; }
+  .row { display: grid; grid-template-columns: 1fr 2fr 1fr; gap: 8px; }
+  #save, #last { background: #3a3f47; } #post { background: #1e8e3e; } #hide { background: #a52828; }
+  #last { width: 100%; margin-top: 8px; font-size: 16px; padding: 12px; }
+  #msg { min-height: 22px; margin-top: 10px; color: #9c9; }
+</style>
+</head>
+<body>
+<main>
+  <header><h1>Scores</h1><span><a href="/control">Match control</a> &nbsp; <a href="/setup">Setup</a></span></header>
+  <div id="banner">&nbsp;</div>
+  <select id="match"></select>
+  <button id="last">Jump to last played match</button>
+  <div class="tables" id="tables"></div>
+  <div class="row">
+    <button id="save">Save</button>
+    <button id="post">Save &amp; show on stream</button>
+    <button id="hide">Hide</button>
+  </div>
+  <div id="msg"></div>
+</main>
+<script>
+const $ = id => document.getElementById(id);
+let sched = null, st = null, sel = null, rev = -1;
+function esc(t) { const d = document.createElement('div'); d.textContent = t; return d.innerHTML; }
+
+function show(i) {
+  sel = i; $('match').value = i;
+  const m = sched.matches[i], sc = m.scores || [];
+  $('tables').innerHTML = (st.swap ? [2, 0, 3, 1] : [0, 2, 1, 3]).map(t =>
+    `<div class="tile ${t < 2 ? 'r' : 'b'}"><small>Table ${t + 1}</small><b>${esc(m.teams[t]) || '—'}</b>` +
+    `<span>${esc(sched.teams[m.teams[t]] || '')}</span>` +
+    `<input id="sc${t}" type="number" inputmode="numeric" min="0" placeholder="score" value="${sc[t] ?? ''}" ${m.teams[t] ? '' : 'disabled'}></div>`).join('');
+}
+
+async function loadSched() {
+  sched = await (await fetch('/api/schedule', { cache: 'no-store' })).json();
+  $('match').innerHTML = sched.matches.map((m, i) => `<option value="${i}">${esc(m.label)} · ${esc(m.time)}</option>`).join('');
+  if (sched.matches.length) show(sel !== null && sel < sched.matches.length ? sel : (st.lastPlayed ?? st.index));
+}
+
+async function act(body, done) {
+  try {
+    const j = await (await fetch('/api/action', { method: 'POST', body: JSON.stringify(body) })).json();
+    $('msg').textContent = j.error ? 'Error: ' + j.error : done;
+    if (!j.error) apply(j.state);
+    return !j.error;
+  } catch (e) { $('msg').textContent = 'Cannot reach server'; }
+}
+
+function apply(s) {
+  st = s;
+  $('banner').className = s.posted ? 'live' : '';
+  $('banner').textContent = s.posted ? `ON STREAM NOW: ${s.posted.label} results` : 'No scores showing on the stream';
+  $('hide').disabled = !s.posted;
+  $('last').disabled = s.lastPlayed === null || s.lastPlayed === sel;
+}
+
+async function save(post) {
+  if (sel === null) return;
+  const scores = [0, 1, 2, 3].map(t => $('sc' + t).value.trim());
+  if (await act({ action: 'scores', index: sel, scores, post }, post ? 'Saved and showing on stream' : 'Saved'))
+    sched.matches[sel].scores = scores.map(v => v === '' ? null : +v);
+}
+
+async function poll() {
+  try {
+    apply(await (await fetch('/api/state', { cache: 'no-store' })).json());
+    if (st.rev !== rev) { rev = st.rev; await loadSched(); apply(st); }
+  } catch (e) { $('banner').textContent = 'Cannot reach server'; }
+  setTimeout(poll, 1000);
+}
+
+$('match').onchange = () => { show(+$('match').value); apply(st); $('msg').textContent = ''; };
+$('last').onclick = () => { show(st.lastPlayed); apply(st); $('msg').textContent = ''; };
+$('save').onclick = () => save(false);
+$('post').onclick = () => save(true);
+$('hide').onclick = () => act({ action: 'unpost' }, 'Hidden');
+poll();
+</script>
+</body>
+</html>

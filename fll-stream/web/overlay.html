@@ -1,0 +1,176 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>FLL Overlay</title>
+<style>
+  /* Designed on a 3840x2160 grid; --u is one grid pixel, so it scales to any 16:9 size. */
+  :root { --u: calc(100vw / 3840); }
+  html, body { margin: 0; background: transparent; overflow: hidden; }
+  body { font-family: Poppins, "Century Gothic", "Segoe UI", Arial, sans-serif; color: #fff; }
+  .abs { position: absolute; }
+  .bar { top: 0; width: calc(200 * var(--u)); height: calc(2160 * var(--u)); }
+  .red { left: 0; background: #e00000; }
+  .blue { left: calc(3640 * var(--u)); background: #0000e0; }
+  .slot { left: 0; width: 100%; height: 50%; display: flex; align-items: center; justify-content: center; }
+  .slot.top { top: 0; } .slot.bottom { top: 50%; }
+  .team { writing-mode: vertical-rl; transform: rotate(180deg); text-align: center; white-space: nowrap; line-height: 1; }
+  .num { font-size: calc(104 * var(--u)); font-weight: 700; }
+  .name { font-size: calc(40 * var(--u)); margin-right: calc(10 * var(--u)); }
+  .table { left: 0; width: 100%; text-align: center; font-size: calc(46 * var(--u)); line-height: 1; }
+  .table.top { top: calc(24 * var(--u)); } .table.bottom { bottom: calc(24 * var(--u)); }
+  .band { left: calc(200 * var(--u)); top: calc(956 * var(--u)); width: calc(3440 * var(--u)); height: calc(248 * var(--u)); background: #000; }
+  .green { left: 0; top: calc(40 * var(--u)); width: 100%; height: calc(168 * var(--u)); background: #008100; }
+  .gap { left: calc(1900 * var(--u)); top: 0; width: calc(40 * var(--u)); height: calc(2160 * var(--u)); background: #000; }
+  .text { top: 0; height: 100%; width: calc(1370 * var(--u)); display: flex; align-items: center; justify-content: center;
+          font-size: calc(66 * var(--u)); white-space: nowrap; }
+  #left { left: 0; } #right { left: calc(2070 * var(--u)); }
+  #clock { left: calc(1370 * var(--u)); top: 0; width: calc(700 * var(--u)); height: 100%; background: #fff; color: #000;
+           display: flex; align-items: center; justify-content: center;
+           flex-direction: column; font-weight: 700; line-height: 1; font-variant-numeric: tabular-nums; }
+  #mlabel { font-size: calc(46 * var(--u)); font-weight: 600; text-transform: uppercase; letter-spacing: .08em; margin-top: calc(6 * var(--u)); }
+  #time { font-size: calc(176 * var(--u)); }
+  body.swap .red { left: calc(3640 * var(--u)); } body.swap .blue { left: 0; }
+  /* match results, shown over everything */
+  #results { inset: 0; background: rgba(0, 0, 0, .85); opacity: 0; transition: opacity .4s;
+             display: flex; flex-direction: column; align-items: center; justify-content: center; }
+  #results.show { opacity: 1; }
+  #rtitle { font-size: calc(130 * var(--u)); font-weight: 700; margin-bottom: calc(70 * var(--u)); }
+  #rgrid { display: grid; grid-template-columns: 1fr 1fr; gap: calc(60 * var(--u)); width: calc(3300 * var(--u)); }
+  .card { height: calc(640 * var(--u)); border-radius: calc(36 * var(--u)); padding: 0 calc(80 * var(--u));
+          display: flex; align-items: center; justify-content: space-between; overflow: hidden; }
+  .card.r { background: #e00000; } .card.b { background: #0000e0; } .card.empty { visibility: hidden; }
+  .card .who { min-width: 0; white-space: nowrap; line-height: 1.15; }
+  .card .tbl { font-size: calc(56 * var(--u)); opacity: .85; }
+  .card .cnum { font-size: calc(170 * var(--u)); font-weight: 700; }
+  .card .cname { font-size: calc(62 * var(--u)); }
+  .card .score { font-size: calc(340 * var(--u)); font-weight: 700; line-height: 1; padding-left: calc(40 * var(--u)); font-variant-numeric: tabular-nums; }
+  #c0 { grid-area: 1 / 1; } #c1 { grid-area: 2 / 1; } #c2 { grid-area: 1 / 2; } #c3 { grid-area: 2 / 2; }
+  body.swap #c0 { grid-area: 1 / 2; } body.swap #c1 { grid-area: 2 / 2; } body.swap #c2 { grid-area: 1 / 1; } body.swap #c3 { grid-area: 2 / 1; }
+</style>
+</head>
+<body>
+<div class="abs gap"></div>
+<div class="abs bar red">
+  <div class="abs table top">Table 1</div>
+  <div class="abs slot top"><div class="team"><div class="num" id="n0"></div><div class="name" id="t0"></div></div></div>
+  <div class="abs slot bottom"><div class="team"><div class="num" id="n1"></div><div class="name" id="t1"></div></div></div>
+  <div class="abs table bottom">Table 2</div>
+</div>
+<div class="abs bar blue">
+  <div class="abs table top">Table 3</div>
+  <div class="abs slot top"><div class="team"><div class="num" id="n2"></div><div class="name" id="t2"></div></div></div>
+  <div class="abs slot bottom"><div class="team"><div class="num" id="n3"></div><div class="name" id="t3"></div></div></div>
+  <div class="abs table bottom">Table 4</div>
+</div>
+<div class="abs band">
+  <div class="abs green">
+    <div class="abs text" id="left"></div>
+    <div class="abs text" id="right"></div>
+  </div>
+  <div class="abs" id="clock"><div id="mlabel"></div><div id="time"></div></div>
+</div>
+<div class="abs" id="results">
+  <div id="rtitle"></div>
+  <div id="rgrid">
+    <div class="card r" id="c0"></div><div class="card r" id="c1"></div>
+    <div class="card b" id="c2"></div><div class="card b" id="c3"></div>
+  </div>
+</div>
+<script>
+const $ = id => document.getElementById(id);
+const sound = new URLSearchParams(location.search).get('sound') !== '0';
+let s = null, offset = 0, lastPhase = null, lastRem = null;
+
+// Sounds from fll-timer.com, preloaded so they fire on time.
+const clips = {};
+for (const n of ['charge', 'mario_kart', 'laser', 'church_bell', 'buzzer', 'four_ding']) {
+  clips[n] = new Audio('/sounds/' + n + '.mp3');
+  clips[n].preload = 'auto';
+}
+function silence() { for (const n in clips) { clips[n].pause(); clips[n].currentTime = 0; } }
+function play(kind) {
+  const clip = sound && s.sounds && clips[s.sounds[kind]];
+  if (!clip) return;
+  silence();
+  clip.play().catch(() => {});
+}
+
+// Constant, very quiet white noise so audio meters show the signal path is alive.
+let ctx = null, noiseGain = null, noiseDb = null;
+function setNoise(db) {
+  if (!sound || db === noiseDb) return;
+  noiseDb = db;
+  if (!ctx) {
+    ctx = new AudioContext();
+    const buf = ctx.createBuffer(1, ctx.sampleRate * 4, ctx.sampleRate), d = buf.getChannelData(0);
+    for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
+    const src = ctx.createBufferSource();
+    src.buffer = buf; src.loop = true;
+    noiseGain = ctx.createGain();
+    src.connect(noiseGain).connect(ctx.destination);
+    src.start();
+  }
+  // uniform noise in [-1, 1] has an RMS of 1/sqrt(3); scale so the RMS sits at `db` dBFS
+  noiseGain.gain.value = db < 0 ? Math.pow(10, db / 20) * Math.sqrt(3) : 0;
+  if (ctx.state === 'suspended') ctx.resume().catch(() => {});
+}
+
+function remaining() {
+  if (s.phase === 'idle') return s.duration;
+  if (s.phase === 'done') return 0;
+  const left = s.duration - (Date.now() + offset - s.startedAt) / 1000;
+  return Math.max(0, Math.min(s.duration, Math.ceil(left)));
+}
+
+function draw() {
+  if (!s) return;
+  const r = remaining();
+  $('time').textContent = Math.floor(r / 60) + ':' + String(r % 60).padStart(2, '0');
+  const phase = s.phase === 'running' && r === 0 ? 'done' : s.phase;
+  if (lastPhase !== null) {   // never fire on page load, only on changes seen live
+    if (phase !== lastPhase) {
+      if (phase === 'running') play('start');
+      else if (phase === 'done') play('end');
+      else silence();           // aborted / reset
+    } else if (phase === 'running' && lastRem > 30 && r <= 30) play('warning');
+  }
+  lastPhase = phase; lastRem = r;
+}
+
+async function poll() {
+  try {
+    const r = await fetch('/api/state', { cache: 'no-store' });
+    s = await r.json();
+    offset = s.now - Date.now();
+    setNoise(s.noise || 0);
+    document.body.classList.toggle('swap', !!s.swap);
+    if (s.posted) {   // content is left in place when hidden so it can fade out
+      $('rtitle').textContent = s.posted.label + ' Results';
+      s.posted.teams.forEach((t, i) => {
+        const c = $('c' + i);
+        c.classList.toggle('empty', !t.number);
+        c.innerHTML = '<div class="who"><div class="tbl"></div><div class="cnum"></div><div class="cname"></div></div><div class="score"></div>';
+        c.querySelector('.tbl').textContent = 'Table ' + (i + 1);
+        c.querySelector('.cnum').textContent = t.number;
+        c.querySelector('.cname').textContent = t.name;
+        c.querySelector('.score').textContent = s.posted.scores[i] ?? '—';
+      });
+    }
+    $('results').classList.toggle('show', !!s.posted);
+    const teams = s.match ? s.match.teams : [];
+    for (let i = 0; i < 4; i++) {
+      $('n' + i).textContent = teams[i] ? teams[i].number : '';
+      $('t' + i).textContent = teams[i] ? teams[i].name : '';
+    }
+    $('mlabel').textContent = s.match ? s.match.label : '';
+    $('left').textContent = s.left;
+    $('right').textContent = s.right;
+  } catch (e) { /* server restarting; keep last state */ }
+  setTimeout(poll, 300);
+}
+poll();
+setInterval(draw, 100);
+</script>
+</body>
+</html>

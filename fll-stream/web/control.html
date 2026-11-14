@@ -1,0 +1,130 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
+<title>FLL Match Control</title>
+<style>
+  * { box-sizing: border-box; }
+  body { margin: 0; font-family: "Segoe UI", system-ui, sans-serif; background: #14161a; color: #eee; }
+  main { max-width: 900px; margin: 0 auto; padding: 16px; }
+  header { display: flex; justify-content: space-between; align-items: baseline; }
+  h1 { font-size: 26px; margin: 0; }
+  a { color: #8ab4f8; }
+  #status { font-size: 14px; color: #f66; min-height: 18px; }
+  #clock { font-size: 110px; font-weight: 700; text-align: center; font-variant-numeric: tabular-nums; line-height: 1.1; }
+  #clock.running { color: #5fdd6a; } #clock.done { color: #ff6b6b; }
+  .tables { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin: 8px 0 16px; }
+  .tile { border-radius: 10px; padding: 10px 14px; }
+  .tile.r { background: #b00000; } .tile.b { background: #0000b0; }
+  .tile small { opacity: .8; } .tile b { font-size: 30px; display: block; } .tile span { font-size: 15px; }
+  button { font: inherit; font-weight: 600; border: 0; border-radius: 12px; color: #fff; padding: 16px; cursor: pointer; }
+  button:disabled { opacity: .35; }
+  #start { width: 100%; font-size: 40px; padding: 28px; background: #1e8e3e; }
+  .row { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px; margin-top: 8px; }
+  .row button { background: #3a3f47; font-size: 18px; }
+  #abort { background: #a52828; }
+  h2 { font-size: 18px; margin: 24px 0 8px; }
+  #list div { display: grid; grid-template-columns: 110px 90px repeat(4, 1fr); gap: 6px; padding: 12px 10px;
+              border-radius: 8px; font-variant-numeric: tabular-nums; cursor: pointer; }
+  #list div:nth-child(odd) { background: #1c1f24; }
+  #list div.cur { background: #1e5631; font-weight: 700; }
+  #list div.practice { color: #aaa; }
+</style>
+</head>
+<body>
+<main>
+  <header><h1 id="label">&nbsp;</h1><span><a href="/scores">Scores</a> &nbsp; <a href="/setup">Setup</a></span></header>
+  <div id="status"></div>
+  <div id="clock">-:--</div>
+  <div class="tables" id="tables"></div>
+  <button id="start">START MATCH</button>
+  <div class="row">
+    <button id="prev">&larr; Previous</button>
+    <button id="abort">Abort / Reset</button>
+    <button id="next">Next match &rarr;</button>
+  </div>
+  <h2>Schedule (tap a row to load it)</h2>
+  <div id="list"></div>
+</main>
+<script>
+const $ = id => document.getElementById(id);
+let s = null, offset = 0, sched = null, drawnRev = -1, drawnIdx = -1;
+
+function esc(t) { const d = document.createElement('div'); d.textContent = t; return d.innerHTML; }
+
+async function act(body) {
+  try {
+    const r = await fetch('/api/action', { method: 'POST', body: JSON.stringify(body) });
+    const j = await r.json();
+    if (j.error) $('status').textContent = j.error; else apply(j.state);
+  } catch (e) { $('status').textContent = 'Cannot reach server'; }
+}
+
+function remaining() {
+  if (s.phase === 'idle') return s.duration;
+  if (s.phase === 'done') return 0;
+  return Math.max(0, Math.min(s.duration, Math.ceil(s.duration - (Date.now() + offset - s.startedAt) / 1000)));
+}
+
+function tick() {
+  if (!s) return;
+  const r = remaining();
+  $('clock').textContent = Math.floor(r / 60) + ':' + String(r % 60).padStart(2, '0');
+  $('clock').className = s.phase;
+}
+
+async function apply(st) {
+  s = st; offset = s.now - Date.now();
+  const running = s.phase === 'running';
+  $('label').textContent = s.match ? `${s.match.label} · ${s.match.time}` : 'No schedule loaded';
+  $('tables').innerHTML = (s.swap ? [2, 0, 3, 1] : [0, 2, 1, 3]).map(i => {
+    const t = s.match && s.match.teams[i] || { number: '', name: '' };
+    return `<div class="tile ${i < 2 ? 'r' : 'b'}"><small>Table ${i + 1}</small><b>${esc(t.number) || '—'}</b><span>${esc(t.name)}&nbsp;</span></div>`;
+  }).join('');
+  $('start').disabled = running || !s.match;
+  $('start').textContent = running ? 'MATCH RUNNING' : s.phase === 'done' ? 'MATCH OVER — RESTART?' : 'START MATCH';
+  $('prev').disabled = running || s.index <= 0;
+  $('next').disabled = running || s.index >= s.count - 1;
+  $('abort').disabled = s.phase === 'idle';
+  if (s.rev !== drawnRev) {
+    sched = await (await fetch('/api/schedule', { cache: 'no-store' })).json();
+    drawnRev = s.rev; drawnIdx = -1;
+    $('list').innerHTML = sched.matches.map((m, i) =>
+      `<div data-i="${i}" class="${m.practice ? 'practice' : ''}"><span>${esc(m.label)}</span><span>${esc(m.time)}</span>` +
+      m.teams.map(t => `<span>${esc(t)}</span>`).join('') + '</div>').join('');
+  }
+  if (s.index !== drawnIdx) {
+    document.querySelectorAll('#list div').forEach((d, i) => d.classList.toggle('cur', i === s.index));
+    drawnIdx = s.index;
+  }
+  tick();
+}
+
+async function poll() {
+  try {
+    await apply(await (await fetch('/api/state', { cache: 'no-store' })).json());
+    if ($('status').textContent === 'Cannot reach server') $('status').textContent = '';
+  } catch (e) { $('status').textContent = 'Cannot reach server'; }
+  setTimeout(poll, 500);
+}
+
+$('start').onclick = () => {
+  if (s.phase === 'done' && !confirm('This match already ran. Start it again?')) return;
+  act({ action: 'start' });
+};
+$('abort').onclick = () => {
+  if (s.phase === 'running' && !confirm('Abort the running match and reset the clock?')) return;
+  act({ action: 'abort' });
+};
+$('prev').onclick = () => act({ action: 'prev' });
+$('next').onclick = () => act({ action: 'next' });
+$('list').onclick = e => {
+  const row = e.target.closest('div[data-i]');
+  if (row && s.phase !== 'running') act({ action: 'goto', index: +row.dataset.i });
+};
+poll();
+setInterval(tick, 100);
+</script>
+</body>
+</html>

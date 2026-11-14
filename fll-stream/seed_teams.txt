@@ -1,0 +1,60 @@
+157
+RoboRally Team 1
+158
+RoboRally Team 2
+4391
+Jetbots
+30714
+Phantom Botz
+41563
+Calvary Robotics
+52716
+Rolling Robots
+52717
+Team 52717
+52946
+Mighty Eagles
+52947
+Soaring Eagles
+52948
+Adams Eagles
+53180
+Washington EcoEngineers
+54040
+Phantom Cubz
+54541
+Robocats 1
+54542
+Robocats 2
+61224
+Robocats 3
+61225
+Robocats 4
+61425
+Creative Eagles
+62435
+Miraleste RoboMarauders A
+62436
+Miraleste RoboMarauders B
+62437
+Miraleste RoboMarauders C
+64632
+CEE #1 Lightning Eagles
+66837
+CEE #2
+70624
+Brownie Bytes
+72422
+Gator Bytes
+72450
+Constellations
+72544
+Washington BioBots
+73199
+CEE #3 Corn on the Cub
+73200
+CEE #4
+73201
+CEE #5 Little Bots
+75476
+Coding Critters
