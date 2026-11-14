@@ -20,3 +20,6 @@ junk/
 
 # Per-channel YouTube logins
 youtube_tokens/
+
+# Companion exports (raw exports contain passwords; commit only the redacted JSON)
+*.companionconfig
