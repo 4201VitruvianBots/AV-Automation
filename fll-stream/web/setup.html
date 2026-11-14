@@ -1,0 +1,110 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>FLL Stream Setup</title>
+<style>
+  * { box-sizing: border-box; }
+  body { margin: 0; font-family: "Segoe UI", system-ui, sans-serif; background: #14161a; color: #eee; }
+  main { max-width: 800px; margin: 0 auto; padding: 16px; }
+  a { color: #8ab4f8; }
+  label { display: block; margin: 12px 0 4px; font-size: 14px; color: #bbb; }
+  input, textarea, select { width: 100%; font: inherit; padding: 10px; border-radius: 8px; border: 1px solid #444; background: #1c1f24; color: #eee; }
+  textarea { height: 180px; font-family: Consolas, monospace; font-size: 13px; }
+  button { font: inherit; font-weight: 600; border: 0; border-radius: 10px; color: #fff; background: #1a73e8; padding: 12px 20px; margin-top: 12px; cursor: pointer; }
+  #msg, #saved, #c-msg { margin-left: 12px; }
+  .ev { display: grid; grid-template-columns: 1fr 140px 90px; gap: 8px; align-items: center; margin-top: 8px; }
+  .ev button { margin: 0; padding: 10px; background: #3a3f47; }
+  code { background: #1c1f24; padding: 1px 5px; border-radius: 4px; }
+  p { color: #bbb; font-size: 14px; }
+</style>
+</head>
+<body>
+<main>
+  <p><a href="/control">&larr; Match control</a></p>
+  <h2>Overlay text</h2>
+  <label>Left of clock</label><input id="left">
+  <label>Right of clock</label><input id="right">
+  <label>Match length (seconds)</label><input id="duration" type="number" min="1" max="3600">
+  <label><input id="swap" type="checkbox" style="width:auto"> Swap left and right sides (Tables 3 &amp; 4 in blue on the left, Tables 1 &amp; 2 in red on the right)</label>
+  <h2>Sounds (played by the overlay)</h2>
+  <label>Match start</label>
+  <select id="s-start"><option value="charge">Charge</option><option value="mario_kart">Race start</option><option value="">None</option></select>
+  <label>30 seconds left</label>
+  <select id="s-warning"><option value="laser">Laser</option><option value="church_bell">Church bells</option><option value="">None</option></select>
+  <label>Match end</label>
+  <select id="s-end"><option value="buzzer">Buzzer</option><option value="four_ding">Four dings</option><option value="">None</option></select>
+  <label>Constant test noise (white noise so the audio meters always show a little signal)</label>
+  <select id="noise"><option value="0">Off</option><option value="-80">-80 dB (quietest)</option><option value="-70">-70 dB</option><option value="-60">-60 dB</option>
+    <option value="-50">-50 dB</option><option value="-40">-40 dB</option><option value="-30">-30 dB (loudest)</option></select>
+  <br><button id="save">Save</button><span id="saved"></span>
+
+  <h2>Bitfocus Companion</h2>
+  <p>When something happens here, this server can press a Companion button. Enter the Companion computer's address and,
+     for each event, the button location as <b>page/row/column</b> (for example 1/0/3). Leave a box empty for no trigger.
+     Save first, then use Test to press that button once.</p>
+  <label>Companion address (IP or name; empty = off)</label><input id="c-host" placeholder="127.0.0.1">
+  <label>Companion port</label><input id="c-port" type="number" placeholder="8000">
+  <div id="c-events"></div>
+  <button id="c-save">Save Companion settings</button><span id="c-msg"></span>
+  <p id="c-log"></p>
+  <p>To control this app <i>from</i> Companion, use its Generic HTTP module and send a POST (no body needed) to
+     <code>http://THIS-PC:8090/api/do/start</code>. Available: <code>start</code>, <code>abort</code>, <code>next</code>,
+     <code>prev</code>, <code>post_last</code> (show the scores of the last played match), <code>unpost</code> (hide scores).</p>
+
+  <h2>Import schedule</h2>
+  <p>Open the event's schedule page on fll.nexus, select the whole Robot game table, copy, and paste it here.
+     Team names: copy the team list from the event's main page. Leave a box empty to keep what is loaded.
+     Importing a schedule jumps back to the first match.</p>
+  <label>Robot game table (time, Table 1–4)</label><textarea id="schedule"></textarea>
+  <label>Teams (number then name)</label><textarea id="teams"></textarea>
+  <button id="import">Import</button><span id="msg"></span>
+</main>
+<script>
+const $ = id => document.getElementById(id);
+async function act(body) {
+  const j = await (await fetch('/api/action', { method: 'POST', body: JSON.stringify(body) })).json();
+  $(body.action === 'import' ? 'msg' : 'saved').textContent = j.error ? 'Error: ' + j.error
+    : body.action === 'import' ? `Imported ${j.matches ?? 'no'} matches, ${j.teams ?? 'no'} teams` : 'Saved';
+  return j;
+}
+fetch('/api/schedule').then(r => r.json()).then(d => {
+  $('left').value = d.settings.left; $('right').value = d.settings.right; $('duration').value = d.settings.duration;
+  $('noise').value = d.settings.noise; $('swap').checked = d.settings.swap;
+  for (const k of ['start', 'warning', 'end']) $('s-' + k).value = d.settings.sounds[k];
+});
+$('save').onclick = () => act({ action: 'settings', left: $('left').value, right: $('right').value, duration: +$('duration').value, noise: +$('noise').value, swap: $('swap').checked,
+  sounds: { start: $('s-start').value, warning: $('s-warning').value, end: $('s-end').value } });
+const EVENTS = { match_start: 'Match starts', warning: '30 seconds left', match_end: 'Match ends',
+  match_abort: 'Match aborted', scores_shown: 'Scores shown', scores_hidden: 'Scores hidden' };
+$('c-events').innerHTML = Object.entries(EVENTS).map(([k, label]) =>
+  `<div class="ev"><span>${label}</span><input id="c-${k}" placeholder="page/row/col"><button data-ev="${k}">Test</button></div>`).join('');
+fetch('/api/schedule').then(r => r.json()).then(d => {
+  const c = d.settings.companion;
+  if (!c) { $('c-msg').textContent = 'Restart the server to enable Companion triggers'; return; }
+  $('c-host').value = c.host; $('c-port').value = c.port;
+  for (const k in EVENTS) $('c-' + k).value = c.buttons[k] || '';
+});
+async function companion(body, done) {
+  const j = await (await fetch('/api/action', { method: 'POST', body: JSON.stringify(body) })).json();
+  $('c-msg').textContent = j.error ? 'Error: ' + j.error : done;
+}
+$('c-save').onclick = () => {
+  const buttons = {};
+  for (const k in EVENTS) buttons[k] = $('c-' + k).value;
+  companion({ action: 'settings', companion: { host: $('c-host').value, port: +$('c-port').value || 8000, buttons } }, 'Saved');
+};
+$('c-events').onclick = e => {
+  if (e.target.dataset.ev) companion({ action: 'companion_test', event: e.target.dataset.ev }, 'Test sent');
+};
+setInterval(async () => {
+  try { $('c-log').textContent = 'Last trigger: ' + ((await (await fetch('/api/state')).json()).companionLog || 'none yet'); } catch (e) {}
+}, 2000);
+$('import').onclick = () => {
+  if ($('schedule').value.trim() && !confirm('Replace the loaded schedule?')) return;
+  act({ action: 'import', schedule: $('schedule').value, teams: $('teams').value });
+};
+</script>
+</body>
+</html>
